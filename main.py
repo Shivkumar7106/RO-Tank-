@@ -1,4 +1,4 @@
-```python
+
 import os
 import json
 
@@ -574,4 +574,4 @@ def get_tank_status(tank_id: str):
         return {
             "error": str(e)
         }
-```
+
