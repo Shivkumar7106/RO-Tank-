@@ -1,3 +1,4 @@
+```python
 import os
 import json
 
@@ -34,11 +35,20 @@ allowed_origins_env = os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173"
 )
-allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+
+allowed_origins = [
+    origin.strip()
+    for origin in allowed_origins_env.split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if "*" not in allowed_origins else ["*"],
+    allow_origins=(
+        ["*"]
+        if "*" in allowed_origins
+        else allowed_origins
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,18 +67,23 @@ TOPIC = os.getenv("MQTT_TOPIC")
 
 
 # ============================================================
-# POSTGRESQL CONNECTION HELPER
+# DATABASE CONFIGURATION
 # ============================================================
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 def get_db_connection():
     """
-    Establishes a connection to PostgreSQL database using DATABASE_URL if available,
-    or fallback to individual environment variables / defaults.
+    Connect to Neon PostgreSQL using DATABASE_URL.
+
+    For local development, falls back to the old
+    individual PostgreSQL environment variables.
     """
-    db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        return psycopg.connect(db_url)
-    
+
+    if DATABASE_URL:
+        return psycopg.connect(DATABASE_URL)
+
     return psycopg.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=int(os.getenv("DB_PORT", "5432")),
@@ -157,6 +172,7 @@ def check_low_water_alert(data):
         conn = get_db_connection()
 
         with conn.cursor() as cursor:
+
             cursor.execute(
                 """
                 SELECT id
@@ -171,7 +187,9 @@ def check_low_water_alert(data):
 
             active_alert = cursor.fetchone()
 
+            # Create low-water alert
             if level < 20 and active_alert is None:
+
                 cursor.execute(
                     """
                     INSERT INTO alerts
@@ -194,7 +212,9 @@ def check_low_water_alert(data):
 
                 print("🚨 LOW WATER ALERT CREATED!")
 
+            # Resolve existing low-water alert
             elif level >= 20 and active_alert is not None:
+
                 cursor.execute(
                     """
                     UPDATE alerts
@@ -220,12 +240,14 @@ def check_low_water_alert(data):
 # ============================================================
 
 def on_connect(client, userdata, flags, reason_code, properties):
-    print("Connected to HiveMQ!")
-    print("Reason:", reason_code)
+
+    print("🔌 Connected to HiveMQ!")
+    print("MQTT reason:", reason_code)
 
     if TOPIC:
         client.subscribe(TOPIC)
-        print("Subscribed to:", TOPIC)
+
+        print("📡 Subscribed to:", TOPIC)
 
 
 # ============================================================
@@ -233,7 +255,9 @@ def on_connect(client, userdata, flags, reason_code, properties):
 # ============================================================
 
 def on_message(client, userdata, msg):
+
     try:
+
         data = json.loads(
             msg.payload.decode()
         )
@@ -246,6 +270,7 @@ def on_message(client, userdata, msg):
         check_low_water_alert(data)
 
     except Exception as e:
+
         print("❌ MQTT processing error:", e)
 
 
@@ -258,6 +283,7 @@ mqtt_client = mqtt.Client(
 )
 
 if USERNAME and PASSWORD:
+
     mqtt_client.username_pw_set(
         USERNAME,
         PASSWORD
@@ -274,7 +300,9 @@ mqtt_client.on_message = on_message
 # ============================================================
 
 if BROKER:
+
     try:
+
         mqtt_client.connect(
             BROKER,
             PORT,
@@ -286,9 +314,15 @@ if BROKER:
         mqtt_client.loop_start()
 
     except Exception as e:
+
         print("❌ MQTT connection error:", e)
+
 else:
-    print("⚠️ MQTT_BROKER not set in environment. Skipping MQTT initialization.")
+
+    print(
+        "⚠️ MQTT_BROKER not set. "
+        "Skipping MQTT initialization."
+    )
 
 
 # ============================================================
@@ -297,10 +331,13 @@ else:
 
 @app.get("/api/tanks/{tank_id}/latest")
 def get_latest_tank_data(tank_id: str):
+
     try:
+
         conn = get_db_connection()
 
         with conn.cursor() as cursor:
+
             cursor.execute(
                 """
                 SELECT
@@ -322,6 +359,7 @@ def get_latest_tank_data(tank_id: str):
         conn.close()
 
         if row is None:
+
             return {
                 "message": "No data found"
             }
@@ -335,6 +373,7 @@ def get_latest_tank_data(tank_id: str):
         }
 
     except Exception as e:
+
         return {
             "error": str(e)
         }
@@ -345,7 +384,11 @@ def get_latest_tank_data(tank_id: str):
 # ============================================================
 
 @app.get("/api/tanks/{tank_id}/history")
-def get_tank_history(tank_id: str, range: str = "1h"):
+def get_tank_history(
+    tank_id: str,
+    range: str = "1h"
+):
+
     ranges = {
         "15m": "15 minutes",
         "1h": "1 hour",
@@ -357,14 +400,20 @@ def get_tank_history(tank_id: str, range: str = "1h"):
     interval = ranges.get(range)
 
     if interval is None:
+
         return {
-            "error": "Invalid range. Use 15m, 1h, 6h, 24h or 7d."
+            "error": (
+                "Invalid range. "
+                "Use 15m, 1h, 6h, 24h or 7d."
+            )
         }
 
     try:
+
         conn = get_db_connection()
 
         with conn.cursor() as cursor:
+
             cursor.execute(
                 f"""
                 SELECT
@@ -374,7 +423,8 @@ def get_tank_history(tank_id: str, range: str = "1h"):
                     recorded_at
                 FROM tank_telemetry
                 WHERE tank_id = %s
-                  AND recorded_at >= NOW() - INTERVAL '{interval}'
+                  AND recorded_at >=
+                      NOW() - INTERVAL '{interval}'
                 ORDER BY recorded_at ASC
                 """,
                 (tank_id,)
@@ -395,6 +445,7 @@ def get_tank_history(tank_id: str, range: str = "1h"):
         ]
 
     except Exception as e:
+
         return {
             "error": str(e)
         }
@@ -406,10 +457,13 @@ def get_tank_history(tank_id: str, range: str = "1h"):
 
 @app.get("/api/tanks/{tank_id}/alerts")
 def get_tank_alerts(tank_id: str):
+
     try:
+
         conn = get_db_connection()
 
         with conn.cursor() as cursor:
+
             cursor.execute(
                 """
                 SELECT
@@ -447,6 +501,7 @@ def get_tank_alerts(tank_id: str):
         ]
 
     except Exception as e:
+
         return {
             "error": str(e)
         }
@@ -458,10 +513,13 @@ def get_tank_alerts(tank_id: str):
 
 @app.get("/api/tanks/{tank_id}/status")
 def get_tank_status(tank_id: str):
+
     try:
+
         conn = get_db_connection()
 
         with conn.cursor() as cursor:
+
             cursor.execute(
                 """
                 SELECT
@@ -477,7 +535,9 @@ def get_tank_status(tank_id: str):
             row = cursor.fetchone()
 
             if row is None:
+
                 conn.close()
+
                 return {
                     "tank_id": tank_id,
                     "status": "offline",
@@ -490,7 +550,8 @@ def get_tank_status(tank_id: str):
                 """
                 SELECT
                     CASE
-                        WHEN %s >= NOW() - INTERVAL '15 seconds'
+                        WHEN %s >=
+                            NOW() - INTERVAL '15 seconds'
                         THEN 'online'
                         ELSE 'offline'
                     END
@@ -509,6 +570,8 @@ def get_tank_status(tank_id: str):
         }
 
     except Exception as e:
+
         return {
             "error": str(e)
         }
+```
